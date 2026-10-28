@@ -103,3 +103,31 @@ npm run deploy
   (`Authorization: Bearer <key>`).
 - Subscribing the same email twice returns `200` with an "already subscribed" message
   rather than an error.
+
+## Admin: add subscribers directly
+
+`scripts/add-subscriber.ps1` inserts addresses straight into D1, bypassing the
+public `/subscribe` flow — **no confirmation email is sent**. Use it only for
+addresses you already have consent for. Each row gets a generated `confirm_token`
+(the schema requires one), and existing emails are skipped (`INSERT OR IGNORE`).
+
+Run from the project root with Wrangler authenticated.
+
+```powershell
+# Single address, inserted as already-confirmed, into production:
+./scripts/add-subscriber.ps1 -Email someone@example.com -Confirmed
+
+# Single address as pending (confirmed = 0):
+./scripts/add-subscriber.ps1 -Email someone@example.com
+
+# Batch from a file (one email per line):
+./scripts/add-subscriber.ps1 -File .\emails.txt -Confirmed
+
+# Target the local dev database instead of production:
+./scripts/add-subscriber.ps1 -Email someone@example.com -Local
+```
+
+Flags:
+- `-Confirmed` — insert as confirmed (`1`); omit for pending (`0`).
+- `-Local` — target the local dev DB instead of remote production.
+- Emails are lowercased and format-checked before insert.
