@@ -226,10 +226,36 @@ The real defense against IP-rotating abuse is a human check such as Cloudflare
 Turnstile; add it only if abuse actually appears, to avoid adding signup friction
 preemptively.
 
-## 9. Known next steps (not yet built)
+## 9. Limits (free tiers)
+
+Three separate free-tier limits apply. Storing addresses is effectively free; the
+constraint you will actually hit is email *sending*.
+
+| Limit | Free cap | Relevance |
+| --- | --- | --- |
+| **D1 storage** | 500 MB per database (5 GB per account) | ~millions of subscriber rows; never a practical limit here |
+| **Resend sending** | 3,000 emails/month, 100/day | The real ceiling — one email per subscribe |
+
+Details:
+
+- **Storage (D1).** A subscriber row is ~100 bytes, so 500 MB holds on the order
+  of millions of addresses. You will not hit this with a mailing list.
+- **If D1 storage ever fills:** D1 stops accepting new inserts and schema changes,
+  returning errors until space is freed (delete stale data). In this app that
+  surfaces as a `500` from `/subscribe` (the insert fails) — it degrades
+  gracefully rather than crashing, but new signups aren't saved until cleaned up.
+- **Sending (Resend).** Every subscribe sends one confirmation email. Past
+  3,000/month or 100/day, Resend rejects sends. In this app that is the `502`
+  path: the subscriber row is still stored as pending, but no email goes out until
+  you're back under quota or on a paid Resend plan. This is the limit to watch as
+  the list grows.
+
+## 10. Known next steps (not yet built)
 
 - **Automated tests** — the project has been verified by hand, not by a test
   suite.
-- **A protected `/subscribers` endpoint** — if you want to pull the list
-  programmatically instead of querying D1 directly.
 - **Cloudflare Turnstile** on `/subscribe` — if real abuse appears.
+
+Already built since the first draft of this doc: the `/subscribers.csv` export
+endpoint and the `scripts/export-subscribers.ps1` / `scripts/add-subscriber.ps1`
+admin scripts.
