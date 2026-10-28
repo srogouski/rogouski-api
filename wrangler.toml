@@ -1,0 +1,16 @@
+name = "rogouski-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-27"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding.
+# Run `npm run db:create` (wrangler d1 create rogouski-subscribers) and paste
+# the returned database_id below before deploying.
+[[d1_databases]]
+binding = "DB"
+database_name = "rogouski-subscribers"
+database_id = "4c70c7ff-ab6c-44f0-8c14-e38c5a9e1a92"
+migrations_dir = "migrations"
+
+# API_KEY is provided as a secret, not here. Set it with:
+#   wrangler secret put API_KEY

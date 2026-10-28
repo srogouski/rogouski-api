@@ -1,0 +1,24 @@
+{
+  "name": "rogouski-api",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker subscription API with D1, Zod validation, and protected Swagger docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "docs": "node scripts/build-docs.mjs",
+    "db:create": "wrangler d1 create rogouski-subscribers",
+    "db:migrate:local": "wrangler d1 migrations apply rogouski-subscribers --local",
+    "db:migrate:remote": "wrangler d1 migrations apply rogouski-subscribers --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.90.0"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  }
+}
