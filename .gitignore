@@ -4,3 +4,8 @@ dist/
 .dev.vars
 *.log
 docs.html
+
+# Exported subscriber data (contains emails — never commit)
+*.csv
+subscribers.csv
+confirmed.csv

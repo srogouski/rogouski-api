@@ -171,6 +171,26 @@ as a spreadsheet; no conversion needed.
 In a browser you can't attach the `Authorization` header to a plain navigation, so
 use `curl` (above) or a header-injecting extension like ModHeader.
 
+### Export script (no API key needed)
+
+`scripts/export-subscribers.ps1` writes the CSV by querying D1 directly through
+Wrangler, so it needs your Wrangler login rather than the API key. Run from the
+project root.
+
+```powershell
+# All subscribers -> .\subscribers.csv
+./scripts/export-subscribers.ps1
+
+# Only confirmed, to a custom path:
+./scripts/export-subscribers.ps1 -Confirmed -OutFile .\confirmed.csv
+
+# From the local dev database instead of production:
+./scripts/export-subscribers.ps1 -Local
+```
+
+The output is UTF-8-with-BOM CSV (opens cleanly in Excel). Exported `.csv` files
+are git-ignored because they contain subscriber emails.
+
 ## Admin: add subscribers directly
 
 `scripts/add-subscriber.ps1` inserts addresses straight into D1, bypassing the
