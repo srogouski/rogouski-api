@@ -67,6 +67,30 @@ export const openApiSpec = {
         },
       },
     },
+    "/subscribers.csv": {
+      get: {
+        summary: "Export subscribers as CSV",
+        description:
+          "Downloads all subscribers as a CSV file (opens in Excel). Protected by the API key in the Authorization header. Pass ?confirmed=1 to export only confirmed subscribers.",
+        security: [{ ApiKeyAuth: [] }],
+        parameters: [
+          {
+            name: "confirmed",
+            in: "query",
+            required: false,
+            schema: { type: "string", enum: ["1"] },
+            description: "When set to 1, export only confirmed subscribers.",
+          },
+        ],
+        responses: {
+          "200": {
+            description: "CSV file (text/csv) as an attachment",
+            content: { "text/csv": { schema: { type: "string" } } },
+          },
+          "403": { description: "Missing or invalid API key" },
+        },
+      },
+    },
     "/health": {
       get: {
         summary: "Health check",

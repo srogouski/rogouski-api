@@ -11,6 +11,7 @@ Cloudflare D1 database, confirms them with a double opt-in email (via
 | POST   | `/subscribe`| none (public)              | Accepts `{ "email": "..." }`, validates, stores it, emails a link. |
 | GET    | `/confirm`  | none (public)              | `?token=<uuid>` marks the subscriber confirmed.                   |
 | GET    | `/docs`     | `Authorization` API key    | Swagger UI. Returns `403` if the key is missing/wrong.            |
+| GET    | `/subscribers.csv` | `Authorization` API key | Downloads all subscribers as CSV (opens in Excel). `403` without the key. |
 | GET    | `/health`   | none (public)              | `{"status":"ok"}`. Add `?deep=1` to also probe the database.      |
 
 Request validation uses [Zod](https://zod.dev/).
@@ -146,6 +147,29 @@ npm run deploy
   rather than an error.
 - A successful subscribe returns `201` (no token in the body). If the row was stored
   but the confirmation email failed to send, it returns `502`.
+
+## Admin: export subscribers to CSV/Excel
+
+`GET /subscribers.csv` downloads all subscribers as a CSV file that opens directly
+in Excel. It exposes every subscriber's email, so it is **protected by the API
+key** (same key as `/docs`) and returns `403` without it.
+
+```bash
+# All subscribers:
+curl -L "https://rogouski-api.rogouski.workers.dev/subscribers.csv" \
+  -H "Authorization: <API_KEY>" -o subscribers.csv
+
+# Only confirmed subscribers (the list you'd actually email):
+curl -L "https://rogouski-api.rogouski.workers.dev/subscribers.csv?confirmed=1" \
+  -H "Authorization: <API_KEY>" -o subscribers.csv
+```
+
+Columns: `id, email, created_at, confirmed`. The file is UTF-8 with a BOM so Excel
+renders accented characters correctly. Opening the saved `.csv` in Excel shows it
+as a spreadsheet; no conversion needed.
+
+In a browser you can't attach the `Authorization` header to a plain navigation, so
+use `curl` (above) or a header-injecting extension like ModHeader.
 
 ## Admin: add subscribers directly
 

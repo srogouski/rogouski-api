@@ -100,6 +100,10 @@ export default {
       return handleConfirm(url, env);
     }
 
+    if (pathname === "/subscribers.csv" && request.method === "GET") {
+      return handleExportCsv(request, url, env);
+    }
+
     if (pathname === "/docs" && request.method === "GET") {
       return handleDocs(request, env);
     }
@@ -284,6 +288,62 @@ async function handleHealth(url: URL, env: Env): Promise<Response> {
   } catch {
     return json({ status: "degraded", db: "error" }, 503);
   }
+}
+
+async function handleExportCsv(
+  request: Request,
+  url: URL,
+  env: Env,
+): Promise<Response> {
+  // Sensitive: exposes every subscriber's email. Protected by the API key.
+  const authError = checkApiKey(request, env);
+  if (authError) return authError;
+
+  // Optional filter: ?confirmed=1 returns only confirmed subscribers.
+  const confirmedOnly = url.searchParams.get("confirmed") === "1";
+  const query = confirmedOnly
+    ? "SELECT id, email, created_at, confirmed FROM subscribers WHERE confirmed = 1 ORDER BY id"
+    : "SELECT id, email, created_at, confirmed FROM subscribers ORDER BY id";
+
+  const { results } = await env.DB.prepare(query).all<{
+    id: number;
+    email: string;
+    created_at: string;
+    confirmed: number;
+  }>();
+
+  const header = ["id", "email", "created_at", "confirmed"];
+  const lines = [header.join(",")];
+  for (const row of results ?? []) {
+    lines.push(
+      [
+        row.id,
+        csvField(row.email),
+        csvField(row.created_at),
+        row.confirmed,
+      ].join(","),
+    );
+  }
+  // Excel opens UTF-8 CSV most reliably with a BOM prefix.
+  const body = "\uFEFF" + lines.join("\r\n") + "\r\n";
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "content-type": "text/csv; charset=utf-8",
+      "content-disposition": 'attachment; filename="subscribers.csv"',
+      "cache-control": "no-store",
+    },
+  });
+}
+
+// Escapes a value for CSV: wrap in quotes if it contains comma, quote, or newline,
+// and double any embedded quotes.
+function csvField(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return '"' + value.replace(/"/g, '""') + '"';
+  }
+  return value;
 }
 
 function handleDocs(request: Request, env: Env): Response {
