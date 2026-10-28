@@ -12,5 +12,11 @@ database_name = "rogouski-subscribers"
 database_id = "4c70c7ff-ab6c-44f0-8c14-e38c5a9e1a92"
 migrations_dir = "migrations"
 
-# API_KEY is provided as a secret, not here. Set it with:
-#   wrangler secret put API_KEY
+# Non-secret config. EMAIL_FROM must use your Resend-verified domain.
+[vars]
+EMAIL_FROM = "Rogouski <noreply@stephenrogouski.com>"
+PUBLIC_BASE_URL = "https://rogouski-api.rogouski.workers.dev"
+
+# Secrets are NOT set here. Set them with:
+#   wrangler secret put API_KEY         # guards /docs
+#   wrangler secret put RESEND_API_KEY  # Resend email API key (re_...)

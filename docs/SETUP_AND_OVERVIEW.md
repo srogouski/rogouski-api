@@ -30,6 +30,7 @@ function) written in TypeScript that powers an email subscription list. It:
 | D1 database | Where subscribers are stored | Cloudflare (`rogouski-subscribers`) |
 | Migration | SQL that creates the `subscribers` table | `migrations/0001_create_subscribers.sql` |
 | Wrangler config | Ties the Worker to the D1 database | `wrangler.toml` |
+| Email provider | Sends confirmation emails | Resend (domain `stephenrogouski.com`) |
 | API key | Secret guarding the `/docs` route | Cloudflare secret `API_KEY` |
 
 A **Worker** is a single script Cloudflare runs for every incoming request.
@@ -82,13 +83,17 @@ code, not in any Cloudflare dashboard setting.
    address so `Foo@Bar.com` and `foo@bar.com` are the same subscriber.
 3. Generates a random `confirm_token` (a UUID).
 4. Inserts a row with `confirmed = 0` (pending).
-5. Returns `201` with the token.
+5. Emails a confirmation link (`/confirm?token=...`) to the subscriber via Resend.
+6. Returns `201` with a message — **the token is not in the response**; it is
+   delivered only by email.
 
 Edge cases:
 - Malformed JSON → `400`.
 - Invalid email → `400` with the validation detail.
 - Email already exists (the `email` column is `UNIQUE`) → `200` with an
   "already subscribed" message, not an error.
+- The row was stored but the email failed to send → `502` (the subscriber is
+  pending; they can retry).
 
 ### `GET /confirm?token=<uuid>` (public)
 
@@ -148,51 +153,60 @@ Three ways to see the endpoint catalog:
 
 ---
 
-## 7. Current state and the email gap
+## 7. Confirmation email (Resend)
 
-Everything above is built, deployed, and working. **One thing is intentionally
-not yet built: sending email.**
+Double opt-in is implemented. On subscribe, the Worker sends a confirmation
+email containing a `/confirm?token=...` link. **The token is delivered only by
+email — it is no longer returned in the API response.** This removes the earlier
+security weakness (the token used to come back to any caller).
 
-Today, `/subscribe` returns the `confirm_token` in the HTTP response body. There
-is **no email sent** — the "Check your email to confirm" message is a placeholder.
-To confirm a subscriber right now, you take the token from the response (or look
-it up in the database) and open `/confirm?token=...` yourself.
-
-This is fine for testing but **not acceptable for a real mailing list**, because:
-
-- a real subscriber never sees the HTTP response, so they can't get the token;
-- returning the token to the caller is a security weakness (anyone who can call
-  subscribe receives the confirmation token directly).
-
-### Why the Worker can't just send email itself
+### Why the Worker can't send email directly
 
 Delivering to an inbox requires speaking to mail servers and, crucially, being
 *trusted* by providers like Gmail so the message isn't dropped as spam. Workers
 don't have that. So email is delegated to a specialized provider (think "Stripe,
-but for email") that you call over HTTPS with an API key.
+but for email") called over HTTPS with an API key. We use **Resend**.
 
-### The plan to close the gap
+### How it's wired up
 
-A provider such as **Resend** has a free tier (3,000 emails/month). The flow to
-finish double opt-in:
+- **`sendConfirmationEmail()`** in `src/index.ts` POSTs to the Resend API
+  (`https://api.resend.com/emails`) with an `Authorization: Bearer` header, the
+  `from` sender, the recipient, and an HTML + plain-text body containing the
+  confirmation link.
+- `handleSubscribe` calls it after the DB insert. On success → `201` (no token).
+  If the email fails to send → `502` (the subscriber row stays pending so they
+  can retry).
 
-1. Create a provider account; get an API key.
-2. Verify a **domain you own** (a DNS step, not a payment) so mail can be sent
-   *from* your address. This is the one real requirement — a domain costs roughly
-   $10–12/year and is unavoidable for a legitimate mailing list. Without it, free
-   tiers only let you send to your own verified address (testing only).
-3. Store the provider API key as another Worker secret (like `API_KEY`).
-4. Update `handleSubscribe` to email the confirmation link instead of returning
-   the token, and change the response message to be truthful.
+### Configuration
 
-Until that's done, the token-in-response flow keeps working for testing.
+| Name | Where | Value |
+| --- | --- | --- |
+| `RESEND_API_KEY` | Worker **secret** | `wrangler secret put RESEND_API_KEY` (a `re_...` key) |
+| `EMAIL_FROM` | `wrangler.toml` `[vars]` | `Rogouski <noreply@stephenrogouski.com>` |
+| `PUBLIC_BASE_URL` | `wrangler.toml` `[vars]` | `https://rogouski-api.rogouski.workers.dev` |
+
+The `EMAIL_FROM` address must be on a **Resend-verified domain**.
+
+### Domain setup that was done (Resend + AWS Route 53)
+
+The sending domain `stephenrogouski.com` was verified in Resend by adding DNS
+records in **AWS Route 53** (the domain's DNS host):
+
+| Purpose | Name | Type | Notes |
+| --- | --- | --- | --- |
+| DKIM | `resend._domainkey` | TXT | long `p=MIG...` key, value wrapped in quotes |
+| SPF | `rsend` | CNAME | `rsend.forge.rmta.net` (bare, no quotes) |
+| SPF | `send` | CNAME | `send.forge.rmta.net` (bare, no quotes) |
+| DMARC | `_dmarc` | TXT | `"v=DMARC1; p=none;"` (optional, recommended) |
+
+Route 53 gotchas worth remembering: it auto-appends the zone name, so you enter
+only the short name (e.g. `resend._domainkey`, not the full FQDN); TXT values must
+be in double quotes; CNAME values must **not** be quoted.
 
 ---
 
 ## 8. Known next steps (not yet built)
 
-- **Email sending** for real double opt-in (see section 7) — required before a
-  real mailing list.
 - **Rate limiting on `/subscribe`** — it's a public write endpoint with no
   throttle today; abusable without a limit.
 - **Automated tests** — the project has been verified by hand, not by a test

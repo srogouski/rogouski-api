@@ -12,7 +12,7 @@ export const openApiSpec = {
       post: {
         summary: "Subscribe an email address",
         description:
-          "Accepts a JSON body with an email field, validates it, and stores a pending (unconfirmed) subscriber.",
+          "Accepts a JSON body with an email field, validates it, stores a pending (unconfirmed) subscriber, and emails a confirmation link. The confirmation token is sent only via email and is never returned in the response.",
         requestBody: {
           required: true,
           content: {
@@ -29,14 +29,14 @@ export const openApiSpec = {
         },
         responses: {
           "201": {
-            description: "Subscriber created (pending confirmation)",
+            description:
+              "Subscriber created (pending confirmation). A confirmation email has been sent.",
             content: {
               "application/json": {
                 schema: {
                   type: "object",
                   properties: {
                     message: { type: "string" },
-                    confirm_token: { type: "string" },
                   },
                 },
               },
@@ -44,6 +44,7 @@ export const openApiSpec = {
           },
           "200": { description: "Email already subscribed" },
           "400": { description: "Invalid request body" },
+          "502": { description: "Subscribed, but the confirmation email failed to send" },
         },
       },
     },

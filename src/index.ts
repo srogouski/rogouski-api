@@ -4,6 +4,10 @@ import { openApiSpec } from "./openapi";
 export interface Env {
   DB: D1Database;
   API_KEY: string;
+  // Email (Resend). RESEND_API_KEY is a secret; the others come from wrangler.toml vars.
+  RESEND_API_KEY: string;
+  EMAIL_FROM: string; // e.g. "Rogouski <noreply@stephenrogouski.com>"
+  PUBLIC_BASE_URL: string; // e.g. "https://rogouski-api.rogouski.workers.dev"
 }
 
 const subscribeSchema = z.object({
@@ -86,13 +90,76 @@ async function handleSubscribe(request: Request, env: Env): Promise<Response> {
     return json({ error: "Database error" }, 500);
   }
 
-  return json(
-    {
-      message: "Subscribed. Check your email to confirm.",
-      confirm_token: token,
-    },
-    201,
-  );
+  // Send the confirmation email. If sending fails, the subscriber row still
+  // exists (pending); we surface a 502 so the caller knows delivery didn't happen.
+  const sent = await sendConfirmationEmail(env, email, token);
+  if (!sent) {
+    return json(
+      {
+        message:
+          "Subscribed, but the confirmation email could not be sent. Please try again later.",
+      },
+      502,
+    );
+  }
+
+  // Note: the token is intentionally NOT returned. It is delivered only via email.
+  return json({ message: "Subscribed. Check your email to confirm." }, 201);
+}
+
+async function sendConfirmationEmail(
+  env: Env,
+  email: string,
+  token: string,
+): Promise<boolean> {
+  const confirmUrl = `${env.PUBLIC_BASE_URL}/confirm?token=${encodeURIComponent(token)}`;
+
+  const html = `<!doctype html>
+<html lang="en">
+<body style="font-family: system-ui, sans-serif; color: #0f172a; line-height: 1.6;">
+  <h2>Confirm your subscription</h2>
+  <p>Thanks for subscribing. Click the button below to confirm your email address.</p>
+  <p>
+    <a href="${confirmUrl}"
+       style="display:inline-block;background:#16a34a;color:#fff;padding:10px 18px;
+              border-radius:8px;text-decoration:none;">Confirm subscription</a>
+  </p>
+  <p>Or paste this link into your browser:<br />
+    <a href="${confirmUrl}">${confirmUrl}</a>
+  </p>
+  <p style="color:#64748b;font-size:13px;">
+    If you didn't request this, you can safely ignore this email.
+  </p>
+</body>
+</html>`;
+
+  const text = `Confirm your subscription by opening this link:\n${confirmUrl}\n\nIf you didn't request this, ignore this email.`;
+
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        from: env.EMAIL_FROM,
+        to: email,
+        subject: "Confirm your subscription",
+        html,
+        text,
+      }),
+    });
+
+    if (!res.ok) {
+      console.error("Resend send failed", res.status, await res.text());
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("Resend send threw", err instanceof Error ? err.message : err);
+    return false;
+  }
 }
 
 async function handleConfirm(url: URL, env: Env): Promise<Response> {
