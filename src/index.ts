@@ -16,8 +16,43 @@ const subscribeSchema = z.object({
 
 const jsonHeaders = { "content-type": "application/json; charset=utf-8" };
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: jsonHeaders });
+// Browser origins allowed to call /subscribe from client-side JavaScript.
+// Apex + www for each site, plus common local dev ports.
+const ALLOWED_ORIGINS = new Set([
+  "https://stephenrogouski.com",
+  "https://www.stephenrogouski.com",
+  "https://stephenross.com",
+  "https://www.stephenross.com",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://localhost:8788",
+]);
+
+// Returns the CORS headers to echo for a given request, or an empty object if
+// the Origin is not allowlisted (so disallowed origins get no CORS grant).
+function corsHeaders(request: Request): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    return {
+      "access-control-allow-origin": origin,
+      "access-control-allow-methods": "POST, OPTIONS",
+      "access-control-allow-headers": "content-type",
+      "access-control-max-age": "86400",
+      vary: "Origin",
+    };
+  }
+  return {};
+}
+
+function json(
+  body: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {},
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...jsonHeaders, ...extraHeaders },
+  });
 }
 
 function html(body: string, status = 200): Response {
@@ -31,6 +66,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
+
+    // CORS preflight for the browser-callable endpoint.
+    if (pathname === "/subscribe" && request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: corsHeaders(request) });
+    }
 
     if (pathname === "/subscribe" && request.method === "POST") {
       return handleSubscribe(request, env);
@@ -53,11 +93,13 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 async function handleSubscribe(request: Request, env: Env): Promise<Response> {
+  const cors = corsHeaders(request);
+
   let payload: unknown;
   try {
     payload = await request.json();
   } catch {
-    return json({ error: "Invalid JSON body" }, 400);
+    return json({ error: "Invalid JSON body" }, 400, cors);
   }
 
   const parsed = subscribeSchema.safeParse(payload);
@@ -65,6 +107,7 @@ async function handleSubscribe(request: Request, env: Env): Promise<Response> {
     return json(
       { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
       400,
+      cors,
     );
   }
 
@@ -79,15 +122,15 @@ async function handleSubscribe(request: Request, env: Env): Promise<Response> {
       .run();
 
     if (!result.success) {
-      return json({ error: "Failed to store subscriber" }, 500);
+      return json({ error: "Failed to store subscriber" }, 500, cors);
     }
   } catch (err) {
     // UNIQUE constraint on email => already subscribed.
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("UNIQUE") || message.includes("constraint")) {
-      return json({ message: "Email already subscribed" }, 200);
+      return json({ message: "Email already subscribed" }, 200, cors);
     }
-    return json({ error: "Database error" }, 500);
+    return json({ error: "Database error" }, 500, cors);
   }
 
   // Send the confirmation email. If sending fails, the subscriber row still
@@ -100,11 +143,12 @@ async function handleSubscribe(request: Request, env: Env): Promise<Response> {
           "Subscribed, but the confirmation email could not be sent. Please try again later.",
       },
       502,
+      cors,
     );
   }
 
   // Note: the token is intentionally NOT returned. It is delivered only via email.
-  return json({ message: "Subscribed. Check your email to confirm." }, 201);
+  return json({ message: "Subscribed. Check your email to confirm." }, 201, cors);
 }
 
 async function sendConfirmationEmail(
