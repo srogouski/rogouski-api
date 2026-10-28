@@ -31,6 +31,10 @@ npm install
 npx wrangler login
 ```
 
+> **Setting this up on a new machine?** See
+> [`docs/NEW_MACHINE_SETUP.md`](docs/NEW_MACHINE_SETUP.md) for exactly what a fresh
+> clone needs (and what it doesn't).
+
 ## Create the D1 database
 
 1. Create the database:
