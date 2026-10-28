@@ -205,11 +205,31 @@ be in double quotes; CNAME values must **not** be quoted.
 
 ---
 
-## 8. Known next steps (not yet built)
+## 8. Rate limiting
 
-- **Rate limiting on `/subscribe`** — it's a public write endpoint with no
-  throttle today; abusable without a limit.
+`/subscribe` is protected by the Cloudflare Workers Rate Limiting binding
+(`SUBSCRIBE_LIMITER` in `wrangler.toml`): 5 requests per 60 seconds, keyed on the
+caller's IP (IPv6 reduced to its /64 prefix for a stable key). Over the limit
+returns `429`.
+
+Important caveats about how this behaves:
+- Limits are **approximate and enforced per Cloudflare location**, and counts
+  update in the background. Requests can briefly exceed the limit, and low-volume
+  manual testing from a single machine may not trip it. It protects against real
+  abuse volume from a source, which is the actual threat.
+- It is **not** a strict global cap. For hard guarantees, Cloudflare's "strict
+  limits" (Durable Object backed) would be required — overkill here.
+- Requires Wrangler v4+ (the `ratelimits` config key). Older Wrangler silently
+  ignores it, leaving the binding `undefined`.
+
+The real defense against IP-rotating abuse is a human check such as Cloudflare
+Turnstile; add it only if abuse actually appears, to avoid adding signup friction
+preemptively.
+
+## 9. Known next steps (not yet built)
+
 - **Automated tests** — the project has been verified by hand, not by a test
   suite.
 - **A protected `/subscribers` endpoint** — if you want to pull the list
   programmatically instead of querying D1 directly.
+- **Cloudflare Turnstile** on `/subscribe` — if real abuse appears.

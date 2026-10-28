@@ -14,9 +14,9 @@
     "db:migrate:remote": "wrangler d1 migrations apply rogouski-subscribers --remote"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241127.0",
+    "@cloudflare/workers-types": "^5.20261028.1",
     "typescript": "^5.7.2",
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.154.0"
   },
   "dependencies": {
     "zod": "^3.23.8"

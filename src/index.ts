@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { openApiSpec } from "./openapi";
 
+// The Workers Rate Limiting binding (GA). Declared inline for type-safety.
+interface RateLimiter {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Env {
   DB: D1Database;
   API_KEY: string;
@@ -8,6 +13,8 @@ export interface Env {
   RESEND_API_KEY: string;
   EMAIL_FROM: string; // e.g. "Rogouski <noreply@stephenrogouski.com>"
   PUBLIC_BASE_URL: string; // e.g. "https://rogouski-api.rogouski.workers.dev"
+  // Rate limiter for /subscribe (keyed on client IP).
+  SUBSCRIBE_LIMITER: RateLimiter;
 }
 
 const subscribeSchema = z.object({
@@ -30,6 +37,19 @@ const ALLOWED_ORIGINS = new Set([
 
 // Returns the CORS headers to echo for a given request, or an empty object if
 // the Origin is not allowlisted (so disallowed origins get no CORS grant).
+// Derives a stable rate-limit key from the caller's IP. IPv6 addresses are
+// reduced to their /64 prefix so a client rotating within its block is treated
+// as one actor; IPv4 is used whole.
+function clientRateKey(request: Request): string {
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  if (ip.includes(":")) {
+    // IPv6: keep the first four hextets (the /64 network prefix).
+    const parts = ip.split(":");
+    return "v6:" + parts.slice(0, 4).join(":");
+  }
+  return "v4:" + ip;
+}
+
 function corsHeaders(request: Request): Record<string, string> {
   const origin = request.headers.get("origin");
   if (origin && ALLOWED_ORIGINS.has(origin)) {
@@ -94,6 +114,19 @@ export default {
 
 async function handleSubscribe(request: Request, env: Env): Promise<Response> {
   const cors = corsHeaders(request);
+
+  // Rate limit by client IP. CF-Connecting-IP is set by Cloudflare at the edge.
+  // For IPv6 we key on the /64 network prefix (the stable part), since a single
+  // client rotates through addresses within its /64.
+  const rateLimitKey = clientRateKey(request);
+  const { success } = await env.SUBSCRIBE_LIMITER.limit({ key: rateLimitKey });
+  if (!success) {
+    return json(
+      { error: "Too many requests. Please try again in a minute." },
+      429,
+      cors,
+    );
+  }
 
   let payload: unknown;
   try {
